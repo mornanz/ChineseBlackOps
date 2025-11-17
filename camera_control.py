@@ -2,21 +2,26 @@ import subprocess
 import requests
 import platform
 
-
 class CameraControl:
+    """
+    Abstract base class defining camera ISO control interface.
+    Implementations must provide concrete ISO get/set operations.
+    """
     def set_iso(self, value: int):
         raise NotImplementedError
 
     def get_iso(self) -> int:
         raise NotImplementedError
 
-
 class NetworkZCamControl(CameraControl):
+    """
+    HTTP-based ISO control for Z-CAM cameras via REST API.
+    Communicates with camera over network interface.
+    """
+    
     def __init__(self, ip):
         self.ip = ip
         self.current_iso = None
-
-        # FULL ISO table from Z-CAM E2-M4 - up to 102400
         self.iso_settings = [
             500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200,
             4000, 5000, 6400, 8000, 10000, 12800, 16000, 20000,
@@ -24,6 +29,7 @@ class NetworkZCamControl(CameraControl):
         ]
 
     def set_iso(self, value: int):
+        """Set camera ISO via HTTP PUT request with timeout handling."""
         try:
             requests.get(f"http://{self.ip}/ctrl/set?iso={value}", timeout=1)
             self.current_iso = value
@@ -32,6 +38,7 @@ class NetworkZCamControl(CameraControl):
             print("[NET ERROR] ISO set failed:", e)
 
     def get_iso(self) -> int:
+        """Retrieve current ISO value with cached fallback for reliability."""
         if self.current_iso is not None:
             return self.current_iso
 
@@ -46,12 +53,14 @@ class NetworkZCamControl(CameraControl):
 
 
 class UsbZCamControl(CameraControl):
+    """
+    USB-based ISO control using zcamctl command-line utility.
+    Provides fallback to cached values when hardware communication fails.
+    """
+    
     def __init__(self):
-        # default ISO if query fails
         self.current_iso = 800
         self.zcamctl_available = self._check_zcamctl()
-
-        # FULL ISO table from Z-CAM E2-M4 - up to 102400
         self.iso_settings = [
             500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200,
             4000, 5000, 6400, 8000, 10000, 12800, 16000, 20000,
@@ -59,7 +68,7 @@ class UsbZCamControl(CameraControl):
         ]
 
     def _check_zcamctl(self):
-        """Check if zcamctl command is available"""
+        """Verify zcamctl utility availability using platform-specific path resolution."""
         try:
             if platform.system() == "Windows":
                 result = subprocess.run(["where", "zcamctl"], 
@@ -73,10 +82,10 @@ class UsbZCamControl(CameraControl):
             return False
 
     def set_iso(self, value: int):
+        """Execute zcamctl command to modify camera ISO setting."""
         if not self.zcamctl_available:
             print(f"[USB WARNING] zcamctl not available - ISO would change to {value}")
-            print("[USB WARNING] Install zcamctl or use network mode for ISO control")
-            self.current_iso = value  # Update our local cache anyway
+            self.current_iso = value
             return
 
         try:
@@ -92,16 +101,16 @@ class UsbZCamControl(CameraControl):
             else:
                 print(f"[USB ERROR] zcamctl failed: {result.stderr.strip()}")
         except FileNotFoundError:
-            print("[USB ERROR] zcamctl command not found. Please install zcamctl.")
+            print("[USB ERROR] zcamctl command not found")
             self.zcamctl_available = False
         except Exception as e:
             print("[USB ERROR] ISO set failed:", e)
 
     def get_iso(self) -> int:
+        """Query current ISO via zcamctl with graceful degradation to cache."""
         if not self.zcamctl_available:
             return self.current_iso
 
-        # try asking zcamctl, fallback to cache
         try:
             result = subprocess.run(
                 ["zcamctl", "--get", "iso"],
@@ -114,7 +123,6 @@ class UsbZCamControl(CameraControl):
             else:
                 print(f"[USB WARNING] zcamctl get failed: {result.stderr.strip()}")
         except FileNotFoundError:
-            print("[USB ERROR] zcamctl command not found")
             self.zcamctl_available = False
         except Exception as e:
             print(f"[USB WARNING] ISO query failed: {e}")
@@ -123,10 +131,13 @@ class UsbZCamControl(CameraControl):
 
 
 class SimulatedZCamControl(CameraControl):
-    """Fallback control that simulates ISO changes for testing"""
+    """
+    Software-only implementation for testing and development.
+    Mimics camera behavior without hardware dependencies.
+    """
+    
     def __init__(self):
         self.current_iso = 800
-        # FULL ISO table for simulation - up to 102400
         self.iso_settings = [
             500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200,
             4000, 5000, 6400, 8000, 10000, 12800, 16000, 20000,
@@ -135,21 +146,22 @@ class SimulatedZCamControl(CameraControl):
         print("[SIM] Using simulated ISO control - no actual camera changes")
 
     def set_iso(self, value: int):
+        """Simulate ISO change by updating internal state only."""
         old_iso = self.current_iso
         self.current_iso = value
         print(f"[SIM] ISO changed from {old_iso} to {value} (simulated)")
 
     def get_iso(self) -> int:
+        """Return current simulated ISO value."""
         return self.current_iso
 
 
 def create_camera_ctrl(ip="10.98.32.1"):
     """
-    Decide if ZCAM is in USB mode or network mode.
-    If HTTP responds -> network control.
-    Else -> USB control via zcamctl.
+    Factory function implementing automatic camera control mode detection.
+    Priority: Network control > USB control > Simulation mode
     """
-    # First try network control
+    # Network mode detection via HTTP endpoint
     try:
         r = requests.get(f"http://{ip}/ctrl/get?k=iso", timeout=0.6)
         if r.status_code == 200:
@@ -158,7 +170,7 @@ def create_camera_ctrl(ip="10.98.32.1"):
     except:
         pass
 
-    # Then check if USB control is available
+    # USB mode detection via zcamctl availability
     usb_control = UsbZCamControl()
     if usb_control.zcamctl_available:
         print("[INFO] Z-CAM USB control via zcamctl")
