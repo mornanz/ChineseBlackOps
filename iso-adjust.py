@@ -148,16 +148,16 @@ class HistogramAnalyzer:
     Implements mean-based ISO selection with temporal smoothing and change cooldown.
     """
     
-    def __init__(self, queue: asyncio.Queue, camera):
+    def __init__(self, queue: asyncio.Queue, camera): ##IMPORTANT
         self.queue = queue
         self.camera = camera
-        self.mean_buffer = deque(maxlen=8)
+        self.mean_buffer = deque(maxlen=12) # greater buffer for mean smoothing and adjustment
         self.last_iso_change = 0
-        self.iso_change_cooldown = 4
+        self.iso_change_cooldown = 10 # min 10 frames before change, previously 4
         self.target_mean = 100
         self.stable_frames = 0
         self.last_analysis_time = 0
-        self.analysis_interval = 0.5
+        self.analysis_interval = 1 # previously 0.5
         self.iso_list = self.camera.iso_settings
 
     def calculate_optimal_iso(self, smooth_mean, dark_ratio, bright_ratio):
