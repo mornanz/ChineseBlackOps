@@ -1,0 +1,44 @@
+<!DOCTYPE HTML>
+<HTML>
+<HEAD>
+	<title>Z-CAM</title>
+	<script src="jquery-3.7.1.min.js"></script>
+</HEAD>
+
+<BODY>
+	
+	<script>
+		function getInfo(){
+			//document.getElementById("infoButton").value
+			$.get("http://10.98.32.1/ctrl/get?k=iso", function(data, status){
+				$.get("http://10.98.32.1/ctrl/set?send_stream=Stream1"); // Network streaming, nie do pliku
+				let txt="";
+				for (let i=0; i<data.opts.length; i++){
+					txt=data.opts[i]+" ";
+					$("#fps").append('<option value=' + txt + '>' + txt + '</option>');
+				}
+				//$("#infoBox").html(txt);
+				
+			});
+		
+		}
+		
+		function setInfo(){
+			$.get("http://10.98.32.1/ctrl/set?iso=" + $('#fps').val());	//stream musi być 1 żeby działało
+		
+		
+		}
+	</script>
+	
+	
+	<input type="button" value="Get Info" id="infoButton" onClick="getInfo()">
+
+	<select id="fps" onchange="setInfo()">
+	
+	</select>
+
+
+</BODY>
+
+
+</HTML>

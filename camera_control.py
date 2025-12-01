@@ -1,22 +1,36 @@
+"""
+Camera Control Abstraction Layer for Z-CAM Devices
+"""
+
 import subprocess
 import requests
 import platform
 
+# ============================================================================
+# ABSTRACT CAMERA CONTROL INTERFACE
+# ============================================================================
+
 class CameraControl:
     """
     Abstract base class defining camera ISO control interface.
-    Implementations must provide concrete ISO get/set operations.
+    All concrete implementations must provide ISO get/set operations.
     """
     def set_iso(self, value: int):
+        """Set camera ISO to specified value"""
         raise NotImplementedError
 
     def get_iso(self) -> int:
+        """Return current camera ISO value"""
         raise NotImplementedError
+
+# ============================================================================
+# NETWORK-BASED CAMERA CONTROL
+# ============================================================================
 
 class NetworkZCamControl(CameraControl):
     """
     HTTP-based ISO control for Z-CAM cameras via REST API.
-    Communicates with camera over network interface.
+    Communicates with camera over network interface using HTTP requests.
     """
     
     def __init__(self, ip):
@@ -29,7 +43,7 @@ class NetworkZCamControl(CameraControl):
         ]
 
     def set_iso(self, value: int):
-        """Set camera ISO via HTTP PUT request with timeout handling."""
+        """Set camera ISO via HTTP PUT request with timeout handling"""
         try:
             requests.get(f"http://{self.ip}/ctrl/set?iso={value}", timeout=1)
             self.current_iso = value
@@ -38,7 +52,7 @@ class NetworkZCamControl(CameraControl):
             print("[NET ERROR] ISO set failed:", e)
 
     def get_iso(self) -> int:
-        """Retrieve current ISO value with cached fallback for reliability."""
+        """Retrieve current ISO value with cached fallback for reliability"""
         if self.current_iso is not None:
             return self.current_iso
 
@@ -51,6 +65,9 @@ class NetworkZCamControl(CameraControl):
 
         return self.current_iso
 
+# ============================================================================
+# USB-BASED CAMERA CONTROL
+# ============================================================================
 
 class UsbZCamControl(CameraControl):
     """
@@ -68,7 +85,7 @@ class UsbZCamControl(CameraControl):
         ]
 
     def _check_zcamctl(self):
-        """Verify zcamctl utility availability using platform-specific path resolution."""
+        """Verify zcamctl utility availability using platform-specific path resolution"""
         try:
             if platform.system() == "Windows":
                 result = subprocess.run(["where", "zcamctl"], 
@@ -82,7 +99,7 @@ class UsbZCamControl(CameraControl):
             return False
 
     def set_iso(self, value: int):
-        """Execute zcamctl command to modify camera ISO setting."""
+        """Execute zcamctl command to modify camera ISO setting"""
         if not self.zcamctl_available:
             print(f"[USB WARNING] zcamctl not available - ISO would change to {value}")
             self.current_iso = value
@@ -107,7 +124,7 @@ class UsbZCamControl(CameraControl):
             print("[USB ERROR] ISO set failed:", e)
 
     def get_iso(self) -> int:
-        """Query current ISO via zcamctl with graceful degradation to cache."""
+        """Query current ISO via zcamctl with graceful degradation to cache"""
         if not self.zcamctl_available:
             return self.current_iso
 
@@ -129,6 +146,9 @@ class UsbZCamControl(CameraControl):
 
         return self.current_iso
 
+# ============================================================================
+# SIMULATION MODE FOR TESTING
+# ============================================================================
 
 class SimulatedZCamControl(CameraControl):
     """
@@ -146,21 +166,35 @@ class SimulatedZCamControl(CameraControl):
         print("[SIM] Using simulated ISO control - no actual camera changes")
 
     def set_iso(self, value: int):
-        """Simulate ISO change by updating internal state only."""
+        """Simulate ISO change by updating internal state only"""
         old_iso = self.current_iso
         self.current_iso = value
         print(f"[SIM] ISO changed from {old_iso} to {value} (simulated)")
 
     def get_iso(self) -> int:
-        """Return current simulated ISO value."""
+        """Return current simulated ISO value"""
         return self.current_iso
 
+# ============================================================================
+# FACTORY FUNCTION FOR CAMERA DETECTION
+# ============================================================================
 
 def create_camera_ctrl(ip="10.98.32.1"):
     """
     Factory function implementing automatic camera control mode detection.
-    Priority: Network control > USB control > Simulation mode
+    
+    Detection priority:
+    1. Network control (HTTP REST API)
+    2. USB control (zcamctl utility)
+    3. Simulation mode (fallback for testing)
+    
+    Parameters:
+        ip (str): Camera IP address for network mode
+        
+    Returns:
+        CameraControl: Appropriate controller instance
     """
+    
     # Network mode detection via HTTP endpoint
     try:
         r = requests.get(f"http://{ip}/ctrl/get?k=iso", timeout=0.6)
