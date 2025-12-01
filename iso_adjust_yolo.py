@@ -1,10 +1,5 @@
 """
 Adaptive ISO Control with Facial Emotion Detection and Histogram Analysis
-Author: [Your Name]
-Date: [Date]
-Description: Implements real-time ISO optimization using image histogram analysis
-             with concurrent facial emotion detection using YOLOv8 and Haar cascades.
-License: [Your License]
 """
 
 import numpy as np
