@@ -1,5 +1,10 @@
 """
-Real-time ISO Optimization with Facial Emotion Detection
+Adaptive ISO Control with Facial Emotion Detection and Histogram Analysis
+Author: [Your Name]
+Date: [Date]
+Description: Implements real-time ISO optimization using image histogram analysis
+             with concurrent facial emotion detection using YOLOv8 and Haar cascades.
+License: [Your License]
 """
 
 import numpy as np
@@ -9,38 +14,51 @@ import os
 from collections import deque
 from datetime import datetime
 from ultralytics import YOLO
-from camera_control import create_camera_ctrl  # Camera control module
+from camera_control import create_camera_ctrl  # Camera control interface
+
 
 # ============================================================================
-# CAMERA INTERFACE ABSTRACTION
+# CAMERA STUB FOR TESTING
 # ============================================================================
 
 class CameraStub:
-    """Fallback camera interface for offline testing"""
+    """Software-only camera stub for offline testing and development"""
+    
     def __init__(self):
+        """Initialize with predefined ISO settings"""
         self.iso_settings = [500, 640, 1600, 3200, 6400, 12800, 25600, 51200]
         self._iso = 1600
 
     def get_iso(self):
-        """Return current ISO setting"""
+        """Return current simulated ISO value"""
         return self._iso
 
     def set_iso(self, value):
         """Set ISO value if within allowed settings"""
         if value not in self.iso_settings:
-            print(f"[CAMERA] ISO {value} not in settings, keeping {self._iso}")
+            print(f"[CAMERA] Requested ISO {value} not in iso_settings, keeping {self._iso}")
             return
         print(f"[CAMERA] Changing ISO {self._iso} -> {value}")
         self._iso = value
 
+
 # ============================================================================
-# FRAME CAPTURE AND PROCESSING
+# FRAME CAPTURE AND EMOTION DETECTION
 # ============================================================================
 
 class AutoAdjust:
-    """Main capture class handling real-time frame processing and emotion detection"""
+    """Real-time frame capture with histogram analysis and emotion detection"""
     
     def __init__(self, queue: asyncio.Queue, camera, save_frames=False, display_frames=True):
+        """
+        Initialize capture system with face detection and emotion recognition
+        
+        Parameters:
+            queue: Asynchronous queue for frame data exchange
+            camera: Camera control interface
+            save_frames: Enable frame saving to disk
+            display_frames: Enable real-time visualization
+        """
         self.loopState = False
         self.cap = cv.VideoCapture(0, cv.CAP_ANY)
         self.queue = queue
@@ -49,7 +67,7 @@ class AutoAdjust:
         self.display_frames = display_frames
         self.frame_count = 0
         self.last_display_time = 0
-        self.display_interval = 0.2  # ~5 FPS display rate
+        self.display_interval = 0.2  # Approximately 5 FPS display rate
 
         if save_frames:
             os.makedirs("auto_adjust_frames", exist_ok=True)
@@ -66,6 +84,11 @@ class AutoAdjust:
             print(f"[WARN] Could not load Haar cascade from {cascade_path}")
             self.face_cascade = None
 
+        # Face detection stabilization variables
+        self.last_faces = []
+        self.missed_frames = 0
+        self.max_missed_frames = 5  # Frames to maintain face before resetting
+
     def CaptureFrame(self):
         """Capture single frame from video source"""
         if not self.cap.isOpened():
@@ -74,24 +97,44 @@ class AutoAdjust:
         return frame if ret else None
 
     def HistogramFromFrame(self, frame):
-        """Convert frame to grayscale and compute histogram"""
+        """Convert frame to grayscale and compute intensity histogram"""
         img = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
         hist = cv.calcHist([img], [0], None, [256], [0, 256])
         return hist, img
 
     def run_emotion_detection(self, frame, gray_img):
-        """Detect faces and classify emotions using YOLOv8"""
+        """Detect faces and classify emotions using stabilized face detection"""
         if self.face_cascade is None:
             return
 
-        faces = self.face_cascade.detectMultiScale(gray_img, 1.3, 5)
+        # Apply Gaussian blur for smoother detection
+        gray_blur = cv.GaussianBlur(gray_img, (3, 3), 0)
 
+        # Detect faces with optimized parameters
+        faces = self.face_cascade.detectMultiScale(
+            gray_blur,
+            scaleFactor=1.1,        # Finer scaling steps
+            minNeighbors=9,         # Balance between stability and sensitivity
+            minSize=(60, 60),       # Ignore very small (distant) faces
+            flags=cv.CASCADE_SCALE_IMAGE
+        )
+
+        # Simple stabilization - use previous detection if temporarily lost
+        if len(faces) == 0 and len(self.last_faces) > 0 and self.missed_frames < self.max_missed_frames:
+            faces = self.last_faces
+            self.missed_frames += 1
+        else:
+            self.last_faces = faces
+            if len(faces) > 0:
+                self.missed_frames = 0
+
+        # Process each detected face
         for (x, y, w, h) in faces:
-            face_img = frame[y:y+h, x:x+w]
+            face_img = frame[y:y + h, x:x + w]
             if face_img.size == 0:
                 continue
 
-            # YOLO emotion prediction
+            # YOLO emotion prediction on face region
             results = self.yolo.predict(
                 face_img,
                 conf=0.25,
@@ -132,26 +175,26 @@ class AutoAdjust:
             hist_flat = hist.flatten()
             if np.sum(hist_flat) > 0:
                 hist_normalized = cv.normalize(hist_flat, None, 0, 200, cv.NORM_MINMAX)
+                hist_normalized = hist_normalized.flatten()  # Flatten for 1D access
                 bin_width = 640 // 256
                 for i in range(255):
                     x1 = i * bin_width
                     x2 = (i + 1) * bin_width
-                    y1 = 200 - int(hist_normalized[i].item())
-                    y2 = 200 - int(hist_normalized[i + 1].item())
-
+                    y1 = 200 - int(hist_normalized[i])
+                    y2 = 200 - int(hist_normalized[i + 1])
                     cv.line(hist_display, (x1, y1), (x2, y2), (0, 255, 0), 1)
 
-            # Calculate marker positions
+            # Calculate marker positions for statistics
             mean_x = int((mean / 255) * 640)
             median_x = int((median / 255) * 640)
             target_x = int((100 / 255) * 640)
 
-            # Draw statistical markers
+            # Draw statistical markers on histogram
             cv.line(hist_display, (mean_x, 0), (mean_x, 200), (0, 0, 255), 2)
             cv.line(hist_display, (median_x, 0), (median_x, 200), (255, 0, 0), 2)
             cv.line(hist_display, (target_x, 0), (target_x, 200), (0, 255, 0), 1)
 
-            # Overlay text information
+            # Overlay text information on frame
             cv.putText(display_frame, f"ISO: {iso}", (10, 30),
                        cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv.putText(display_frame, f"Mean: {mean:.1f}", (10, 60),
@@ -163,17 +206,18 @@ class AutoAdjust:
             cv.putText(display_frame, f"Frame: {self.frame_count}", (10, 150),
                        cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
+            # Combine frame and histogram displays
             combined = np.vstack([display_frame, hist_display])
             cv.imshow("Auto Adjust + Emotions", combined)
         except Exception as e:
             print(f"[DISPLAY ERROR] {e}")
 
     def InterruptLoop(self):
-        """Signal to stop capture loop"""
+        """Signal to stop the capture loop"""
         self.loopState = False
 
     async def autoadjustLoop(self):
-        """Main capture and processing loop"""
+        """Main asynchronous capture and processing loop"""
         try:
             self.loopState = True
 
@@ -185,12 +229,12 @@ class AutoAdjust:
 
                 hist, gray_img = self.HistogramFromFrame(frame)
 
-                # Emotion detection on faces
+                # Perform emotion detection on faces
                 self.run_emotion_detection(frame, gray_img)
 
                 current_iso = self.camera.get_iso() if self.camera is not None else 800
 
-                # Queue frame data for analysis
+                # Queue frame data for histogram analysis
                 try:
                     self.queue.put_nowait((hist, gray_img, frame, self.frame_count, current_iso))
                 except asyncio.QueueFull:
@@ -208,7 +252,7 @@ class AutoAdjust:
                     self.DisplayFrameWithHistogram(frame, gray_img, hist, current_iso, mean, median)
                     self.last_display_time = current_time
 
-                # Keyboard controls
+                # Handle keyboard controls
                 key = cv.waitKey(1) & 0xFF
                 if key == ord('q'):
                     self.display_frames = False
@@ -230,14 +274,22 @@ class AutoAdjust:
             self.cap.release()
             cv.destroyAllWindows()
 
+
 # ============================================================================
 # HISTOGRAM ANALYSIS AND ISO OPTIMIZATION
 # ============================================================================
 
 class HistogramAnalyzer:
-    """ISO optimization based on real-time histogram analysis"""
+    """ISO optimization based on real-time histogram analysis with hysteresis"""
     
     def __init__(self, queue: asyncio.Queue, camera):
+        """
+        Initialize histogram analyzer with hysteresis control
+        
+        Parameters:
+            queue: Asynchronous queue for receiving frame data
+            camera: Camera control interface
+        """
         self.queue = queue
         self.camera = camera
         self.mean_buffer = deque(maxlen=12)
@@ -250,7 +302,7 @@ class HistogramAnalyzer:
         self.iso_list = self.camera.iso_settings
 
     def calculate_optimal_iso(self, smooth_mean, dark_ratio, bright_ratio):
-        """Determine optimal ISO based on smoothed histogram mean"""
+        """Determine optimal ISO based on smoothed histogram mean with hysteresis"""
         current_iso = self.camera.get_iso()
 
         try:
@@ -328,7 +380,7 @@ class HistogramAnalyzer:
             return 0
 
     async def processLoop(self):
-        """Main analysis loop for ISO optimization"""
+        """Main asynchronous analysis loop for ISO optimization"""
         try:
             while True:
                 try:
@@ -355,6 +407,7 @@ class HistogramAnalyzer:
                 mean = float(np.sum(hist_flat * levels) / np.sum(hist_flat))
                 median = float(np.median(gray_img))
 
+                # Calculate dark and bright pixel ratios
                 dark_ratio = np.sum(gray_img < 30) / gray_img.size
                 bright_ratio = np.sum(gray_img > 225) / gray_img.size
 
@@ -363,7 +416,7 @@ class HistogramAnalyzer:
 
                 current_iso = self.camera.get_iso()
 
-                # Apply ISO adjustment with cooldown
+                # Apply ISO adjustment with cooldown period
                 if frame_count - self.last_iso_change >= self.iso_change_cooldown:
                     new_iso = self.calculate_optimal_iso(smooth_mean, dark_ratio, bright_ratio)
 
@@ -372,7 +425,7 @@ class HistogramAnalyzer:
                         self.last_iso_change = frame_count
                         self.stable_frames = 0
 
-                        # Save frame on ISO change
+                        # Save frame when ISO changes
                         if not os.path.exists("auto_adjust_frames"):
                             os.makedirs("auto_adjust_frames", exist_ok=True)
                         timestamp = datetime.now().strftime("%H%M%S")
@@ -386,27 +439,28 @@ class HistogramAnalyzer:
         except Exception as e:
             print(f"[ANALYZER ERROR] {e}")
 
+
 # ============================================================================
 # MAIN EXECUTION
 # ============================================================================
 
 async def main():
-    """Main asynchronous entry point"""
+    """Main asynchronous entry point with automatic camera detection"""
     histogram_queue = asyncio.Queue(maxsize=3)
 
-    # Initialize camera interface with fallback
+    # Attempt connection to real camera; fallback to stub on failure
     try:
         camera = create_camera_ctrl("10.98.32.1")  # Replace with actual camera IP
         print("[INIT] Connected to network camera")
     except Exception as e:
-        print(f"[WARN] Camera connection failed, using stub: {e}")
+        print(f"[WARN] Camera connection failed, using CameraStub: {e}")
         camera = CameraStub()
 
     # Initialize processing components
     aa = AutoAdjust(queue=histogram_queue, camera=camera, save_frames=True, display_frames=True)
     analyzer = HistogramAnalyzer(histogram_queue, camera)
 
-    # Start concurrent tasks
+    # Start concurrent processing tasks
     auto_task = asyncio.create_task(aa.autoadjustLoop())
     analyzer_task = asyncio.create_task(analyzer.processLoop())
 
@@ -420,7 +474,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    """Program entry point"""
+    """Program entry point with error handling"""
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
