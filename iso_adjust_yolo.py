@@ -55,7 +55,7 @@ class AutoAdjust:
             display_frames: Enable real-time visualization
         """
         self.loopState = False
-        self.cap = cv.VideoCapture(0, cv.CAP_ANY)
+        self.cap = cv.VideoCapture(0, cv.CAP_DSHOW)
         self.queue = queue
         self.camera = camera
         self.save_frames = save_frames

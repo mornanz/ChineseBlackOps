@@ -3,10 +3,10 @@ Camera User Interface for Z-CAM Emotion Detection System
 """
 
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton, QHBoxLayout,
-    QVBoxLayout, QFrame, QSizePolicy, QSpacerItem
+    QApplication, QWidget, QLabel, QHBoxLayout,
+    QVBoxLayout, QFrame, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QRect
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
 import cv2
 import sys
@@ -34,19 +34,10 @@ class CameraUI(QWidget):
         self.setStyleSheet("""
             QWidget { background-color: white; color: black; }
             QLabel { color: black; font-size: 16px; }
-            QPushButton { 
-                background-color: #0078d7; 
-                border: none; 
-                padding: 10px; 
-                border-radius: 6px; 
-                color: black; 
-                font-size: 14px; 
-            }
-            QPushButton:hover { background-color: #005ea6; }
         """)
 
         # ====================================================================
-        # TOP AREA WITH LOGO AND CONTROLS
+        # TOP AREA WITH LOGO
         # ====================================================================
         self.top_area = QFrame()
         
@@ -84,19 +75,10 @@ class CameraUI(QWidget):
 
         top_layout.addWidget(self.logo, alignment=Qt.AlignCenter)
 
-        # Right section with settings button
-        right_wrapper = QWidget()
-        right_wrapper.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        right_layout = QHBoxLayout(right_wrapper)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.btn_settings = QPushButton("⚙️ Settings")
-        self.btn_settings.setFixedWidth(100)
-        self.btn_settings.clicked.connect(self.toggle_settings)
-        
-        right_layout.addStretch()
-        right_layout.addWidget(self.btn_settings)
-        top_layout.addWidget(right_wrapper)
+        # Right spacer for symmetry
+        right_spacer = QWidget()
+        right_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        top_layout.addWidget(right_spacer)
 
         # ====================================================================
         # CENTRAL CAMERA DISPLAY AREA
@@ -124,7 +106,7 @@ class CameraUI(QWidget):
             background-color: #0078d7; 
             color: white; 
             border-radius: 8px; 
-            padding: 10px;
+            padding: 5px;
         """)
         self.info_box.setFixedHeight(100)
         
@@ -138,34 +120,6 @@ class CameraUI(QWidget):
             info_layout.addWidget(lbl)
 
         # ====================================================================
-        # SETTINGS SIDEBAR PANEL
-        # ====================================================================
-        self.settings_panel = QWidget()
-        self.settings_panel.setMaximumWidth(0)
-        self.settings_panel.setVisible(False)
-        self.settings_panel.setStyleSheet("""
-            background-color: white; 
-            border-left: 3px solid #0078d7;
-        """)
-        
-        settings_layout = QVBoxLayout(self.settings_panel)
-        
-        # Settings button definitions with action mappings
-        settings_config = {
-            "Exposure": self.set_exposure,
-            "Capture Image": self.save_frame,
-            "Exit": self.close
-        }
-        
-        for text, action in settings_config.items():
-            btn = QPushButton(text)
-            btn.setFixedWidth(200)
-            btn.clicked.connect(action)
-            settings_layout.addWidget(btn, alignment=Qt.AlignCenter)
-            
-        settings_layout.addStretch(1)
-
-        # ====================================================================
         # MAIN WINDOW LAYOUT ASSEMBLY
         # ====================================================================
         central_layout = QVBoxLayout()
@@ -175,7 +129,6 @@ class CameraUI(QWidget):
 
         main_layout = QHBoxLayout(self)
         main_layout.addLayout(central_layout, stretch=1)
-        main_layout.addWidget(self.settings_panel)
 
         # ====================================================================
         # VIDEO CAPTURE INITIALIZATION
@@ -189,8 +142,8 @@ class CameraUI(QWidget):
         self.timer.start(30)
         
         self.current_frame = None
-        self.settings_anim = None
 
+    
     # ========================================================================
     # WINDOW RESIZE HANDLING
     # ========================================================================
@@ -233,44 +186,6 @@ class CameraUI(QWidget):
         self.cam_label.setFixedSize(target_w, target_h)
 
     # ========================================================================
-    # SETTINGS PANEL CONTROL
-    # ========================================================================
-    
-    def toggle_settings(self):
-        """Animate settings panel slide-in/out with smooth transition"""
-        target_width = 220 if not self.settings_panel.isVisible() else 0
-        self.settings_panel.setVisible(True)
-
-        self.settings_anim = QPropertyAnimation(self.settings_panel, b"maximumWidth")
-        self.settings_anim.setDuration(300)
-        self.settings_anim.setStartValue(self.settings_panel.width())
-        self.settings_anim.setEndValue(target_width)
-        
-        if target_width == 0:
-            self.settings_anim.finished.connect(
-                lambda: self.settings_panel.setVisible(False)
-            )
-            
-        self.settings_anim.start()
-
-        # Update camera size after animation completes
-        QTimer.singleShot(320, self.update_camera_size)
-
-    # ========================================================================
-    # SETTINGS ACTIONS
-    # ========================================================================
-    
-    def set_exposure(self):
-        """Placeholder for exposure control implementation"""
-        print("[UI] Exposure settings panel requested")
-
-    def save_frame(self):
-        """Capture and save current video frame to disk"""
-        if self.current_frame is not None:
-            cv2.imwrite("capture.png", self.current_frame)
-            print("[UI] Frame saved as capture.png")
-
-    # ========================================================================
     # VIDEO FRAME PROCESSING
     # ========================================================================
     
@@ -311,8 +226,8 @@ class CameraUI(QWidget):
         self.cam_label.setPixmap(QPixmap.fromImage(image))
 
         # TODO: Integrate with emotion detection model
-        self.label_person.setText("Person: John Doe")
-        self.label_emotion.setText("Emotion: Smile 😊")
+        #self.label_person.setText("Person: John Doe")
+        #self.label_emotion.setText("Emotion: Smile 😊")
 
     # ========================================================================
     # CLEANUP AND SHUTDOWN
