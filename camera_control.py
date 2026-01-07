@@ -195,7 +195,6 @@ def create_camera_ctrl(ip="10.98.32.1"):
         CameraControl: Appropriate controller instance
     """
     
-    # Network mode detection via HTTP endpoint
     try:
         r = requests.get(f"http://{ip}/ctrl/get?k=iso", timeout=0.6)
         if r.status_code == 200:
@@ -204,7 +203,6 @@ def create_camera_ctrl(ip="10.98.32.1"):
     except:
         pass
 
-    # USB mode detection via zcamctl availability
     usb_control = UsbZCamControl()
     if usb_control.zcamctl_available:
         print("[INFO] Z-CAM USB control via zcamctl")

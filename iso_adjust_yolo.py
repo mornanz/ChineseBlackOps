@@ -11,7 +11,7 @@ from collections import deque
 from datetime import datetime
 from ultralytics import YOLO
 import torch
-from camera_control import create_camera_ctrl  # Camera control interface
+from camera_control import create_camera_ctrl
 
 
 # ============================================================================
@@ -40,7 +40,7 @@ class CameraStub:
 
 
 # ============================================================================
-# FRAME CAPTURE AND EMOTION DETECTION - UPDATED
+# FRAME CAPTURE AND EMOTION DETECTION
 # ============================================================================
 
 class AutoAdjust:
@@ -54,33 +54,29 @@ class AutoAdjust:
         self.cap = cv.VideoCapture(0, cv.CAP_DSHOW)
         self.queue = queue
         self.camera = camera
-        self.frame_bridge = frame_bridge  # Dodane
+        self.frame_bridge = frame_bridge
         self.save_frames = save_frames
         self.display_frames = display_frames
         self.frame_count = 0
         self.last_display_time = 0
         self.display_interval = 0.2
         
-        # Dodane do komunikacji z UI
         self.current_frame = None
         self.detected_people = []
 
         if save_frames:
             os.makedirs("auto_adjust_frames", exist_ok=True)
 
-        # Initialize YOLOv8 emotion detection model
         print("[AUTOADJUST] Loading YOLO model best.pt...")
         self.yolo = YOLO("best.pt")
         print("[AUTOADJUST] YOLO classes loaded")
 
-        # Initialize Haar cascade for face detection
         cascade_path = cv.data.haarcascades + "haarcascade_frontalface_default.xml"
         self.face_cascade = cv.CascadeClassifier(cascade_path)
         if self.face_cascade.empty():
             print(f"[WARN] Could not load Haar cascade from {cascade_path}")
             self.face_cascade = None
 
-        # Face detection stabilization variables
         self.last_faces = []
         self.missed_frames = 0
         self.max_missed_frames = 5
@@ -101,15 +97,13 @@ class AutoAdjust:
     def run_emotion_detection(self, frame, gray_img):
         """Detect faces and classify emotions using stabilized face detection"""
         if self.face_cascade is None:
-            return frame.copy(), []  # Zwraca ramkę i pustą listę
+            return frame.copy(), [] 
 
         result_frame = frame.copy()
-        detected_people = []  # Dodane
+        detected_people = []
         
-        # Apply Gaussian blur for smoother detection
         gray_blur = cv.GaussianBlur(gray_img, (3, 3), 0)
 
-        # Detect faces with optimized parameters
         faces = self.face_cascade.detectMultiScale(
             gray_blur,
             scaleFactor=1.1,
@@ -118,7 +112,6 @@ class AutoAdjust:
             flags=cv.CASCADE_SCALE_IMAGE
         )
 
-        # Simple stabilization - use previous detection if temporarily lost
         if len(faces) == 0 and len(self.last_faces) > 0 and self.missed_frames < self.max_missed_frames:
             faces = self.last_faces
             self.missed_frames += 1
@@ -127,7 +120,6 @@ class AutoAdjust:
             if len(faces) > 0:
                 self.missed_frames = 0
 
-        # Process each detected face
         person_id = 1
         
         for (x, y, w, h) in faces:
@@ -135,7 +127,6 @@ class AutoAdjust:
             if face_img.size == 0:
                 continue
 
-            # YOLO emotion prediction on face region
             results = self.yolo.predict(
                 face_img,
                 conf=0.25,
@@ -145,48 +136,97 @@ class AutoAdjust:
             )
             result = results[0]
 
+            text_color = (255, 255, 255)
+            shadow_color = (0, 0, 0)
+
             if len(result.boxes) > 0:
                 box = result.boxes[0]
                 cls_id = int(box.cls[0])
                 label = self.yolo.names.get(cls_id, str(cls_id))
                 conf = float(box.conf[0])
 
-                # Draw detection bounding box and label
-                cv.rectangle(result_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                text = f"Person {person_id}"
+                
+                font = cv.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.0
+                thickness = 2
+                
+                text_x = x + 10
+                text_y = max(y - 10, 30)
+                
                 cv.putText(
                     result_frame,
-                    f"{label} {conf:.2f}",
-                    (x, max(y - 10, 20)),
-                    cv.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 255, 0),
-                    2,
+                    text,
+                    (text_x + 1, text_y + 1),
+                    font,
+                    font_scale,
+                    shadow_color,
+                    thickness,
+                    cv.LINE_AA
+                )
+                
+                cv.putText(
+                    result_frame,
+                    text,
+                    (text_x, text_y),
+                    font,
+                    font_scale,
+                    text_color,
+                    thickness,
+                    cv.LINE_AA
                 )
 
-                # Dodaj dane osoby
                 person_data = {
                     'id': person_id,
                     'emotion': label,
                     'confidence': conf,
-                    'position': (x, y, w, h)
+                    'bbox': (x, y, w, h)
                 }
                 detected_people.append(person_data)
                 
             else:
-                # Draw face rectangle without emotion label
-                cv.rectangle(result_frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                text = f"Person {person_id}"
+                
+                font = cv.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.0
+                thickness = 2
+                
+                text_x = x + 10
+                text_y = max(y - 10, 30)
+                
+                cv.putText(
+                    result_frame,
+                    text,
+                    (text_x + 1, text_y + 1),
+                    font,
+                    font_scale,
+                    shadow_color,
+                    thickness,
+                    cv.LINE_AA
+                )
+                
+                cv.putText(
+                    result_frame,
+                    text,
+                    (text_x, text_y),
+                    font,
+                    font_scale,
+                    text_color,
+                    thickness,
+                    cv.LINE_AA
+                )
                 
                 person_data = {
                     'id': person_id,
                     'emotion': "Unknown",
                     'confidence': 0.0,
-                    'position': (x, y, w, h)
+                    'bbox': (x, y, w, h)
                 }
                 detected_people.append(person_data)
             
             person_id += 1
 
-        return result_frame, detected_people  # Zwraca ramkę i listę osób
+        return result_frame, detected_people
 
     def DisplayFrameWithHistogram(self, frame, gray_img, hist, iso, mean, median):
         """Display processed frame with histogram overlay and statistics"""
@@ -194,7 +234,6 @@ class AutoAdjust:
             display_frame = cv.resize(frame, (640, 480))
             hist_display = np.zeros((200, 640, 3), dtype=np.uint8)
 
-            # Render histogram visualization
             hist_flat = hist.flatten()
             if np.sum(hist_flat) > 0:
                 hist_normalized = cv.normalize(hist_flat, None, 0, 200, cv.NORM_MINMAX)
@@ -207,31 +246,31 @@ class AutoAdjust:
                     y2 = 200 - int(hist_normalized[i + 1])
                     cv.line(hist_display, (x1, y1), (x2, y2), (0, 255, 0), 1)
 
-            # Calculate marker positions for statistics
             mean_x = int((mean / 255) * 640)
             median_x = int((median / 255) * 640)
             target_x = int((100 / 255) * 640)
 
-            # Draw statistical markers on histogram
             cv.line(hist_display, (mean_x, 0), (mean_x, 200), (0, 0, 255), 2)
             cv.line(hist_display, (median_x, 0), (median_x, 200), (255, 0, 0), 2)
             cv.line(hist_display, (target_x, 0), (target_x, 200), (0, 255, 0), 1)
 
-            # Overlay text information on frame
             cv.putText(display_frame, f"ISO: {iso}", (10, 30),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv.putText(display_frame, f"Mean: {mean:.1f}", (10, 60),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv.putText(display_frame, f"Median: {median:.1f}", (10, 90),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                    cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
             cv.putText(display_frame, "Target: 100", (10, 120),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv.putText(display_frame, f"Frame: {self.frame_count}", (10, 150),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-            # Combine frame and histogram displays
+            if len(self.detected_people) > 0:
+                cv.putText(display_frame, f"People: {len(self.detected_people)}", (10, 180),
+                        cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
             combined = np.vstack([display_frame, hist_display])
-            cv.imshow("Auto Adjust + Emotions", combined)
+            cv.imshow("Auto Adjust + Person Detection", combined)
         except Exception as e:
             print(f"[DISPLAY ERROR] {e}")
 
@@ -252,19 +291,16 @@ class AutoAdjust:
 
                 hist, gray_img = self.HistogramFromFrame(frame)
 
-                # Perform emotion detection on faces - ZMIENIONE
                 result_frame, detected_people = self.run_emotion_detection(frame, gray_img)
                 
-                # Update bridge with detected people
                 self.current_frame = result_frame
                 self.detected_people = detected_people
                 
                 if self.frame_bridge:
                     self.frame_bridge.update_frame(result_frame, detected_people)
-
+                
                 current_iso = self.camera.get_iso() if self.camera is not None else 800
 
-                # Queue frame data for histogram analysis (używamy oryginalnej ramki bez oznaczeń)
                 try:
                     self.queue.put_nowait((hist, gray_img, frame, self.frame_count, current_iso))
                 except asyncio.QueueFull:
@@ -274,7 +310,6 @@ class AutoAdjust:
                     except Exception:
                         pass
 
-                # Display at reduced frame rate
                 current_time = asyncio.get_event_loop().time()
                 if self.display_frames and (current_time - self.last_display_time >= self.display_interval):
                     mean = float(np.mean(gray_img))
@@ -282,7 +317,6 @@ class AutoAdjust:
                     self.DisplayFrameWithHistogram(result_frame, gray_img, hist, current_iso, mean, median)
                     self.last_display_time = current_time
 
-                # Handle keyboard controls
                 key = cv.waitKey(1) & 0xFF
                 if key == ord('q'):
                     self.display_frames = False
@@ -306,7 +340,7 @@ class AutoAdjust:
 
 
 # ============================================================================
-# HISTOGRAM ANALYSIS AND ISO OPTIMIZATION - BEZ ZMIAN
+# HISTOGRAM ANALYSIS AND ISO OPTIMIZATION
 # ============================================================================
 
 class HistogramAnalyzer:
@@ -338,7 +372,6 @@ class HistogramAnalyzer:
 
         current_zone = self._get_iso_zone(current_iso)
 
-        # Zone determination with hysteresis thresholds
         if smooth_mean < 20:
             target_zone = 6
             hysteresis_threshold = 25
@@ -361,13 +394,11 @@ class HistogramAnalyzer:
             target_zone = 0
             hysteresis_threshold = 160
 
-        # Apply hysteresis to prevent rapid oscillation
         if current_zone != target_zone:
             if (target_zone > current_zone and smooth_mean < hysteresis_threshold) or \
                (target_zone < current_zone and smooth_mean > hysteresis_threshold):
                 target_zone = current_zone
 
-        # Map zone to ISO index
         zone_to_iso = {
             6: len(self.iso_list) - 1,
             5: len(self.iso_list) - 2,
@@ -416,24 +447,20 @@ class HistogramAnalyzer:
                 except asyncio.TimeoutError:
                     continue
 
-                # Throttle analysis rate
                 current_time = asyncio.get_event_loop().time()
                 if current_time - self.last_analysis_time < self.analysis_interval:
                     continue
                 self.last_analysis_time = current_time
 
-                # Skip very dark frames
                 frame_mean = np.mean(gray_img)
                 if frame_mean < 10:
                     continue
 
-                # Calculate histogram statistics
                 hist_flat = hist.flatten()
                 levels = np.arange(256)
                 mean = float(np.sum(hist_flat * levels) / np.sum(hist_flat))
                 median = float(np.median(gray_img))
 
-                # Calculate dark and bright pixel ratios
                 dark_ratio = np.sum(gray_img < 30) / gray_img.size
                 bright_ratio = np.sum(gray_img > 225) / gray_img.size
 
@@ -442,7 +469,6 @@ class HistogramAnalyzer:
 
                 current_iso = self.camera.get_iso()
 
-                # Apply ISO adjustment with cooldown period
                 if frame_count - self.last_iso_change >= self.iso_change_cooldown:
                     new_iso = self.calculate_optimal_iso(smooth_mean, dark_ratio, bright_ratio)
 
@@ -451,7 +477,6 @@ class HistogramAnalyzer:
                         self.last_iso_change = frame_count
                         self.stable_frames = 0
 
-                        # Save frame when ISO changes
                         if not os.path.exists("auto_adjust_frames"):
                             os.makedirs("auto_adjust_frames", exist_ok=True)
                         timestamp = datetime.now().strftime("%H%M%S")
@@ -470,27 +495,20 @@ class HistogramAnalyzer:
 # MAIN EXECUTION
 # ============================================================================
 
-# ============================================================================
-# MAIN EXECUTION - USUŃ CAŁY TEN FRAGMENT!
-# ============================================================================
-
 async def main():
     """Main asynchronous entry point with automatic camera detection"""
     histogram_queue = asyncio.Queue(maxsize=3)
 
-    # Attempt connection to real camera; fallback to stub on failure
     try:
-        camera = create_camera_ctrl("10.98.32.1")  # Replace with actual camera IP
+        camera = create_camera_ctrl("10.98.32.1")
         print("[INIT] Connected to network camera")
     except Exception as e:
         print(f"[WARN] Camera connection failed, using CameraStub: {e}")
         camera = CameraStub()
 
-    # Initialize processing components
     aa = AutoAdjust(queue=histogram_queue, camera=camera, save_frames=True, display_frames=True)
     analyzer = HistogramAnalyzer(histogram_queue, camera)
 
-    # Start concurrent processing tasks
     auto_task = asyncio.create_task(aa.autoadjustLoop())
     analyzer_task = asyncio.create_task(analyzer.processLoop())
 

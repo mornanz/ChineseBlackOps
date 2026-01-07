@@ -13,7 +13,7 @@ import sys
 
 
 # ============================================================================
-# MAIN APPLICATION WINDOW - FIXED
+# MAIN APPLICATION WINDOW
 # ============================================================================
 
 class UISignals(QObject):
@@ -110,7 +110,7 @@ class CameraUI(QWidget):
             border-radius: 8px; 
         """)
         self.info_box.setMinimumHeight(200)
-        self.info_box.setMinimumWidth(400)  # STAŁA minimalna szerokość
+        self.info_box.setMinimumWidth(400) 
 
         self.info_layout = QGridLayout(self.info_box)
         self.info_layout.setSpacing(6)
@@ -128,13 +128,9 @@ class CameraUI(QWidget):
 
         main_layout = QHBoxLayout(self)
         main_layout.addLayout(central_layout, stretch=1)
-
-        # ====================================================================
-        # TIMER DO ODCZYTU RAMKI Z BRIDGE
-        # ====================================================================
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame_from_bridge)
-        self.timer.start(30)  # ~33 FPS
+        self.timer.start(30)
 
         self.current_frame = None
         self.no_signal_text = "ŁĄCZENIE Z KAMERĄ..."
@@ -150,7 +146,6 @@ class CameraUI(QWidget):
     def update_frame_from_bridge(self):
         """Odczytaj ramkę z bridge i wyświetl"""
         if self.current_frame is None:
-            # Pokaż tekst "brak sygnału"
             self.show_no_signal()
             return
         
@@ -164,7 +159,6 @@ class CameraUI(QWidget):
         if w <= 0 or h <= 0:
             return
             
-        # Utwórz czarny obrazek z tekstem
         black_frame = QImage(w, h, QImage.Format_RGB888)
         black_frame.fill(Qt.black)
         
@@ -178,14 +172,13 @@ class CameraUI(QWidget):
         self.cam_label.setPixmap(pixmap)
     
     def display_frame(self, frame):
-        """Wyświetl ramkę w UI"""
+        """Wyświetl ramkę w UI z prostokątami osób"""
         w = self.cam_label.width()
         h = self.cam_label.height()
 
         if w <= 0 or h <= 0:
             return
 
-        # Przetwarzanie ramki do wyświetlenia
         frame_h, frame_w = frame.shape[:2]
         target_ratio = w / h
         frame_ratio = frame_w / frame_h
@@ -198,8 +191,8 @@ class CameraUI(QWidget):
             new_h = int(frame_w / target_ratio)
             start_y = (frame_h - new_h) // 2
             cropped = frame[start_y:start_y + new_h, :]
-
-        # Konwersja i wyświetlenie
+        
+        display_frame = cropped.copy()
         rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
         resized = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA)
 
@@ -207,20 +200,18 @@ class CameraUI(QWidget):
         self.cam_label.setPixmap(QPixmap.fromImage(image))
 
     # ========================================================================
-    # PEOPLE DISPLAY - ZMIENIONE: TYLKO 2 BLOKI
+    # PEOPLE DISPLAY
     # ========================================================================
     
     @pyqtSlot(list)
     def update_people(self, people):
         """Aktualizuj listę osób z danymi z AutoAdjust"""
-        # Usuń stare widgety
         for box in self.person_rows:
             self.info_layout.removeWidget(box)
             box.deleteLater()
         self.person_rows.clear()
 
         if not people:
-            # Jeśli nie ma osób, pokaż komunikat
             empty_label = QLabel("No people detected")
             empty_label.setAlignment(Qt.AlignCenter)
             empty_label.setStyleSheet("color: white; font-size: 14px; font-style: italic;")
@@ -240,12 +231,14 @@ class CameraUI(QWidget):
                 QFrame {
                     background-color: rgba(255, 255, 255, 0.2);
                     border-radius: 6px;
-                    padding: 0px;
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                    padding: 4px;
                 }
-            """)    
+            """)
             
             v = QVBoxLayout(box)
-            v.setContentsMargins(8, 8, 8, 8)
+            v.setContentsMargins(4, 4, 4, 4)
+            v.setSpacing(2)
 
             if 'id' in person:
                 person_id = person['id']
@@ -256,53 +249,49 @@ class CameraUI(QWidget):
                 emotion = 'Unknown'
                 confidence = 0.0
 
-            # PIERWSZY BLOK: OSOBA
             lbl_person = QLabel(f"Person: {person_id}")
             
-            # DRUGI BLOK: EMOCJA Z PROCENTEM W NAWIASIE
             if confidence > 0:
-                # Emocja z procentem w nawiasie - wszystko w jednej linii
                 lbl_emotion = QLabel(f"Emotion: {emotion} ({confidence*100:.1f}%)")
             else:
                 lbl_emotion = QLabel(f"Emotion: {emotion}")
 
-            # Ustaw style z kolorem dla emocji
             emotion_colors = {
-                'Happy': "white",  # Light green
-                'Sad': "white",    # Light blue
-                'Angry': "white",  # Tomato red
-                'Surprise': "white", # Gold
-                'Fear': 'white',   # Medium purple
-                'Disgust': 'white', # Lime green
-                'Neutral': "white", # Light gray
-                'Unknown': "white"  # Dark gray
+                'Happy': "#51FA51",
+                'Sad': "#5ED0FD", 
+                'Angry': "#FA583C",
+                'Surprise': "#F5A802",
+                'Fear': '#9370DB', 
+                'Disgust': '#32CD32', 
+                'Neutral': "#555555", 
+                'Unknown': "#FFFFFF" 
             }
             
             emotion_color = emotion_colors.get(emotion, 'white')
 
-            # Styl dla osoby (biały)
             lbl_person.setAlignment(Qt.AlignCenter)
             lbl_person.setStyleSheet(f"""
                 color: #FFFFFF; 
                 font-size: {font_size}px; 
                 font-weight: bold;
+                padding: 0px;
+                margin: 0px;
             """)
             
-            # Styl dla emocji (kolor zgodny z emocją)
             lbl_emotion.setAlignment(Qt.AlignCenter)
             lbl_emotion.setStyleSheet(f"""
                 color: {emotion_color}; 
                 font-size: {font_size}px; 
                 font-weight: bold;
+                padding: 0px;
+                margin: 0px;
             """)
 
-            # Dodaj tylko 2 widgety
             v.addWidget(lbl_person)
             v.addWidget(lbl_emotion)
 
             self.info_layout.addWidget(box, row, col)
             self.person_rows.append(box)
-
     # ========================================================================
     # RESIZE HANDLING
     # ========================================================================
@@ -345,7 +334,7 @@ class CameraUI(QWidget):
 
 
 # ============================================================================
-# TEST MODE - Z UPDATED TEST CASES
+# TEST MODE
 # ============================================================================
 
 if __name__ == "__main__":
@@ -379,33 +368,26 @@ if __name__ == "__main__":
         """Wysyłaj testowe dane"""
         time.sleep(1)
         
-        # 1. Testowa ramka z czerwonym kwadratem
         test_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        test_frame[100:300, 100:300] = [0, 0, 255]  # Czerwony kwadrat
+        test_frame[100:300, 100:300] = [0, 0, 255]
         bridge.update_frame(test_frame, [])
         
-        # 2. Test różnych scenariuszy z osobami
         test_cases = [
-            # Test 1: Brak osób
             [],
             
-            # Test 2: 1 osoba - Happy
             [{'id': 1, 'emotion': 'Happy', 'confidence': 0.85}],
             
-            # Test 3: 2 osoby - różne emocje
             [
                 {'id': 1, 'emotion': 'Happy', 'confidence': 0.92},
                 {'id': 2, 'emotion': 'Sad', 'confidence': 0.78}
             ],
             
-            # Test 4: 3 osoby
             [
                 {'id': 1, 'emotion': 'Angry', 'confidence': 0.65},
                 {'id': 2, 'emotion': 'Surprise', 'confidence': 0.88},
                 {'id': 3, 'emotion': 'Neutral', 'confidence': 0.95}
             ],
             
-            # Test 5: 4 osoby - wszystkie emocje
             [
                 {'id': 1, 'emotion': 'Happy', 'confidence': 0.91},
                 {'id': 2, 'emotion': 'Sad', 'confidence': 0.82},
@@ -413,7 +395,6 @@ if __name__ == "__main__":
                 {'id': 4, 'emotion': 'Fear', 'confidence': 0.68}
             ],
             
-            # Test 6: 6 osób
             [
                 {'id': 1, 'emotion': 'Happy', 'confidence': 0.94},
                 {'id': 2, 'emotion': 'Sad', 'confidence': 0.76},
@@ -424,21 +405,17 @@ if __name__ == "__main__":
             ]
         ]
         
-        # Wyślij każdy test co 3 sekundy
         for i, people in enumerate(test_cases):
             print(f"\n[TEST] Case {i+1}: Sending {len(people)} people")
             for person in people:
                 print(f"  - Person {person['id']}: {person['emotion']} ({person['confidence']*100:.1f}%)")
             
-            # Wyślij dane osób do UI
             window.signals.people_updated.emit(people)
             time.sleep(3)
         
-        # Na koniec pokaż komunikat
         print("\n[TEST] All test cases completed!")
         window.signals.people_updated.emit([])
     
-    # Uruchom test w osobnym wątku
     test_thread = threading.Thread(target=send_test_data, daemon=True)
     test_thread.start()
     
