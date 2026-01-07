@@ -1,47 +1,53 @@
 """
-Camera User Interface for Z-CAM Emotion Detection System
+Camera User Interface for Z-CAM Emotion Detection System - FIXED VERSION
 """
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QHBoxLayout,
-    QVBoxLayout, QFrame, QSizePolicy
+    QVBoxLayout, QFrame, QSizePolicy, QGridLayout
 )
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, pyqtSlot
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QFont
 import cv2
 import sys
 
 
 # ============================================================================
-# MAIN APPLICATION WINDOW
+# MAIN APPLICATION WINDOW - FIXED
 # ============================================================================
 
+class UISignals(QObject):
+    """Signals do aktualizacji UI"""
+    people_updated = pyqtSignal(list)
+
+
 class CameraUI(QWidget):
-    """
-    Responsive camera application interface with real-time video display
-    and emotion detection visualization.
-    """
+    """Responsive camera application interface - USUWA WŁASNĄ KAMERĘ"""
     
-    def __init__(self):
-        """Initialize UI components, layouts, and camera capture"""
+    def __init__(self, frame_bridge):
+        """Initialize UI WITHOUT its own camera"""
         super().__init__()
+        
+        self.bridge = frame_bridge
+        self.bridge.set_frame_callback(self.update_display_frame)
         
         # ====================================================================
         # WINDOW CONFIGURATION
         # ====================================================================
         self.setWindowTitle("Z-CAM Emotion Detection System")
-        self.setMinimumWidth(650)
+        self.setMinimumWidth(320)
         self.setStyleSheet("""
             QWidget { background-color: white; color: black; }
             QLabel { color: black; font-size: 16px; }
         """)
-
+        
+        self.signals = UISignals()
+        self.signals.people_updated.connect(self.update_people)
+        
         # ====================================================================
         # TOP AREA WITH LOGO
         # ====================================================================
         self.top_area = QFrame()
-        
-        # Dynamically set height based on screen resolution
         screen = QApplication.primaryScreen()
         screen_geom = screen.availableGeometry()
         top_height = int(screen_geom.height() * 0.18)
@@ -50,12 +56,10 @@ class CameraUI(QWidget):
         top_layout = QHBoxLayout(self.top_area)
         top_layout.setContentsMargins(20, 0, 20, 0)
 
-        # Left spacer for flexible layout
         left_spacer = QWidget()
         left_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         top_layout.addWidget(left_spacer)
 
-        # Central logo display
         self.logo = QLabel()
         self.logo.setAlignment(Qt.AlignCenter)
         logo_path = "./logo_images/witlogo1.png"
@@ -75,7 +79,6 @@ class CameraUI(QWidget):
 
         top_layout.addWidget(self.logo, alignment=Qt.AlignCenter)
 
-        # Right spacer for symmetry
         right_spacer = QWidget()
         right_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         top_layout.addWidget(right_spacer)
@@ -93,7 +96,6 @@ class CameraUI(QWidget):
         self.cam_label.setStyleSheet("background-color: #111; border: 3px solid #0078d7;")
         self.cam_label.setMinimumSize(320, 180)
 
-        # Center camera display using stretch spacers
         self.camera_container_layout.addStretch(1)
         self.camera_container_layout.addWidget(self.cam_label, alignment=Qt.AlignCenter)
         self.camera_container_layout.addStretch(1)
@@ -106,18 +108,15 @@ class CameraUI(QWidget):
             background-color: #0078d7; 
             color: white; 
             border-radius: 8px; 
-            padding: 5px;
         """)
-        self.info_box.setFixedHeight(100)
-        
-        info_layout = QVBoxLayout(self.info_box)
-        self.label_person = QLabel("Person: -")
-        self.label_emotion = QLabel("Emotion: -")
-        
-        for lbl in (self.label_person, self.label_emotion):
-            lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet("font-size: 18px; font-weight: bold;")
-            info_layout.addWidget(lbl)
+        self.info_box.setMinimumHeight(200)
+        self.info_box.setMinimumWidth(400)  # STAŁA minimalna szerokość
+
+        self.info_layout = QGridLayout(self.info_box)
+        self.info_layout.setSpacing(6)
+        self.info_layout.setContentsMargins(6, 6, 6, 6)
+
+        self.person_rows = []
 
         # ====================================================================
         # MAIN WINDOW LAYOUT ASSEMBLY
@@ -131,80 +130,62 @@ class CameraUI(QWidget):
         main_layout.addLayout(central_layout, stretch=1)
 
         # ====================================================================
-        # VIDEO CAPTURE INITIALIZATION
+        # TIMER DO ODCZYTU RAMKI Z BRIDGE
         # ====================================================================
-        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_frame)
-        self.timer.start(30)
-        
+        self.timer.timeout.connect(self.update_frame_from_bridge)
+        self.timer.start(30)  # ~33 FPS
+
         self.current_frame = None
+        self.no_signal_text = "ŁĄCZENIE Z KAMERĄ..."
 
-    
     # ========================================================================
-    # WINDOW RESIZE HANDLING
+    # FRAME UPDATE FROM BRIDGE
     # ========================================================================
     
-    def resizeEvent(self, event):
-        """
-        Handle window resize events to maintain camera display proportions
+    def update_display_frame(self, frame):
+        """Callback dla nowej ramki z bridge"""
+        self.current_frame = frame
+    
+    def update_frame_from_bridge(self):
+        """Odczytaj ramkę z bridge i wyświetl"""
+        if self.current_frame is None:
+            # Pokaż tekst "brak sygnału"
+            self.show_no_signal()
+            return
         
-        Parameters:
-            event: QResizeEvent containing new window dimensions
-        """
-        super().resizeEvent(event)
-        self.update_camera_size()
-
-    def update_camera_size(self):
-        """Recalculate camera display size based on available window space"""
-        container = self.camera_container
-        avail_width = container.width()
-        avail_height = container.height()
-
-        # Calculate reserved space for UI elements
-        reserved_height = self.top_area.height() + self.info_box.height() + 100
-        max_cam_height = self.height() - reserved_height
-
-        if max_cam_height < 100 or avail_width < 100:
-            return
-
-        # Maintain 16:9 aspect ratio
-        target_w = avail_width
-        target_h = int(target_w * 9 / 16)
-
-        if target_h > max_cam_height:
-            target_h = max_cam_height
-            target_w = int(target_h * 16 / 9)
-
-        # Apply minimum size constraints
-        target_w = max(target_w, 320)
-        target_h = max(target_h, 180)
-
-        self.cam_label.setFixedSize(target_w, target_h)
-
-    # ========================================================================
-    # VIDEO FRAME PROCESSING
-    # ========================================================================
+        self.display_frame(self.current_frame)
     
-    def update_frame(self):
-        """Capture and display video frame with aspect ratio preservation"""
-        ret, frame = self.cap.read()
-        if not ret:
+    def show_no_signal(self):
+        """Pokaż komunikat o braku sygnału"""
+        w = self.cam_label.width()
+        h = self.cam_label.height()
+        
+        if w <= 0 or h <= 0:
             return
-
-        self.current_frame = frame.copy()
-
-        # Get current display dimensions
+            
+        # Utwórz czarny obrazek z tekstem
+        black_frame = QImage(w, h, QImage.Format_RGB888)
+        black_frame.fill(Qt.black)
+        
+        pixmap = QPixmap.fromImage(black_frame)
+        painter = QPainter(pixmap)
+        painter.setPen(Qt.white)
+        painter.setFont(QFont("Arial", 14))
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, self.no_signal_text)
+        painter.end()
+        
+        self.cam_label.setPixmap(pixmap)
+    
+    def display_frame(self, frame):
+        """Wyświetl ramkę w UI"""
         w = self.cam_label.width()
         h = self.cam_label.height()
 
         if w <= 0 or h <= 0:
             return
 
-        # Crop to maintain 16:9 aspect ratio
+        # Przetwarzanie ramki do wyświetlenia
         frame_h, frame_w = frame.shape[:2]
         target_ratio = w / h
         frame_ratio = frame_w / frame_h
@@ -218,40 +199,247 @@ class CameraUI(QWidget):
             start_y = (frame_h - new_h) // 2
             cropped = frame[start_y:start_y + new_h, :]
 
-        # Convert and resize for display
+        # Konwersja i wyświetlenie
         rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
         resized = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA)
 
         image = QImage(resized.data, w, h, w * 3, QImage.Format_RGB888)
         self.cam_label.setPixmap(QPixmap.fromImage(image))
 
-        # TODO: Integrate with emotion detection model
-        #self.label_person.setText("Person: John Doe")
-        #self.label_emotion.setText("Emotion: Smile 😊")
+    # ========================================================================
+    # PEOPLE DISPLAY - ZMIENIONE: TYLKO 2 BLOKI
+    # ========================================================================
+    
+    @pyqtSlot(list)
+    def update_people(self, people):
+        """Aktualizuj listę osób z danymi z AutoAdjust"""
+        # Usuń stare widgety
+        for box in self.person_rows:
+            self.info_layout.removeWidget(box)
+            box.deleteLater()
+        self.person_rows.clear()
+
+        if not people:
+            # Jeśli nie ma osób, pokaż komunikat
+            empty_label = QLabel("No people detected")
+            empty_label.setAlignment(Qt.AlignCenter)
+            empty_label.setStyleSheet("color: white; font-size: 14px; font-style: italic;")
+            self.info_layout.addWidget(empty_label, 0, 0, 1, 2)
+            self.person_rows.append(empty_label)
+            return
+
+        font_size = max(10, 20 - len(people) * 2)
+        max_cols = 2
+
+        for idx, person in enumerate(people):
+            row = idx // max_cols
+            col = idx % max_cols
+
+            box = QFrame()
+            box.setStyleSheet("""
+                QFrame {
+                    background-color: rgba(255, 255, 255, 0.2);
+                    border-radius: 6px;
+                    padding: 0px;
+                }
+            """)    
+            
+            v = QVBoxLayout(box)
+            v.setContentsMargins(8, 8, 8, 8)
+
+            if 'id' in person:
+                person_id = person['id']
+                emotion = person.get('emotion', 'Unknown')
+                confidence = person.get('confidence', 0.0)
+            else:
+                person_id = idx + 1
+                emotion = 'Unknown'
+                confidence = 0.0
+
+            # PIERWSZY BLOK: OSOBA
+            lbl_person = QLabel(f"Person: {person_id}")
+            
+            # DRUGI BLOK: EMOCJA Z PROCENTEM W NAWIASIE
+            if confidence > 0:
+                # Emocja z procentem w nawiasie - wszystko w jednej linii
+                lbl_emotion = QLabel(f"Emotion: {emotion} ({confidence*100:.1f}%)")
+            else:
+                lbl_emotion = QLabel(f"Emotion: {emotion}")
+
+            # Ustaw style z kolorem dla emocji
+            emotion_colors = {
+                'Happy': "white",  # Light green
+                'Sad': "white",    # Light blue
+                'Angry': "white",  # Tomato red
+                'Surprise': "white", # Gold
+                'Fear': 'white',   # Medium purple
+                'Disgust': 'white', # Lime green
+                'Neutral': "white", # Light gray
+                'Unknown': "white"  # Dark gray
+            }
+            
+            emotion_color = emotion_colors.get(emotion, 'white')
+
+            # Styl dla osoby (biały)
+            lbl_person.setAlignment(Qt.AlignCenter)
+            lbl_person.setStyleSheet(f"""
+                color: #FFFFFF; 
+                font-size: {font_size}px; 
+                font-weight: bold;
+            """)
+            
+            # Styl dla emocji (kolor zgodny z emocją)
+            lbl_emotion.setAlignment(Qt.AlignCenter)
+            lbl_emotion.setStyleSheet(f"""
+                color: {emotion_color}; 
+                font-size: {font_size}px; 
+                font-weight: bold;
+            """)
+
+            # Dodaj tylko 2 widgety
+            v.addWidget(lbl_person)
+            v.addWidget(lbl_emotion)
+
+            self.info_layout.addWidget(box, row, col)
+            self.person_rows.append(box)
 
     # ========================================================================
-    # CLEANUP AND SHUTDOWN
+    # RESIZE HANDLING
+    # ========================================================================
+    
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_camera_size()
+
+    def update_camera_size(self):
+        container = self.camera_container
+        avail_width = container.width()
+        avail_height = container.height()
+
+        reserved_height = self.top_area.height() + self.info_box.height() + 100
+        max_cam_height = self.height() - reserved_height
+
+        if max_cam_height < 100 or avail_width < 100:
+            return
+
+        target_w = avail_width
+        target_h = int(target_w * 9 / 16)
+
+        if target_h > max_cam_height:
+            target_h = max_cam_height
+            target_w = int(target_h * 16 / 9)
+
+        target_w = max(target_w, 320)
+        target_h = max(target_h, 180)
+
+        self.cam_label.setFixedSize(target_w, target_h)
+
+    # ========================================================================
+    # CLEANUP
     # ========================================================================
     
     def closeEvent(self, event):
-        """
-        Handle application shutdown with resource cleanup
-        
-        Parameters:
-            event: QCloseEvent triggered by window close
-        """
-        self.cap.release()
-        print("[UI] Camera resources released")
+        """Handle application shutdown"""
+        print("[UI] Window closed")
         super().closeEvent(event)
 
 
 # ============================================================================
-# APPLICATION ENTRY POINT
+# TEST MODE - Z UPDATED TEST CASES
 # ============================================================================
 
 if __name__ == "__main__":
-    """Main application entry point with error handling"""
+    """Testuj UI bez AutoAdjust"""
+    print("[UI TEST] Running UI in standalone test mode")
+    
+    class TestBridge:
+        def __init__(self):
+            self.current_frame = None
+        
+        def set_frame_callback(self, callback):
+            self.frame_callback = callback
+        
+        def update_frame(self, frame, people):
+            self.current_frame = frame
+    
     app = QApplication(sys.argv)
-    window = CameraUI()
-    window.showMaximized()
+    bridge = TestBridge()
+    window = CameraUI(bridge)
+    window.resize(1000, 700)
+    window.show()
+    
+    # ========================================================================
+    # UPDATED TEST CASES
+    # ========================================================================
+    import threading
+    import time
+    import numpy as np
+    
+    def send_test_data():
+        """Wysyłaj testowe dane"""
+        time.sleep(1)
+        
+        # 1. Testowa ramka z czerwonym kwadratem
+        test_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        test_frame[100:300, 100:300] = [0, 0, 255]  # Czerwony kwadrat
+        bridge.update_frame(test_frame, [])
+        
+        # 2. Test różnych scenariuszy z osobami
+        test_cases = [
+            # Test 1: Brak osób
+            [],
+            
+            # Test 2: 1 osoba - Happy
+            [{'id': 1, 'emotion': 'Happy', 'confidence': 0.85}],
+            
+            # Test 3: 2 osoby - różne emocje
+            [
+                {'id': 1, 'emotion': 'Happy', 'confidence': 0.92},
+                {'id': 2, 'emotion': 'Sad', 'confidence': 0.78}
+            ],
+            
+            # Test 4: 3 osoby
+            [
+                {'id': 1, 'emotion': 'Angry', 'confidence': 0.65},
+                {'id': 2, 'emotion': 'Surprise', 'confidence': 0.88},
+                {'id': 3, 'emotion': 'Neutral', 'confidence': 0.95}
+            ],
+            
+            # Test 5: 4 osoby - wszystkie emocje
+            [
+                {'id': 1, 'emotion': 'Happy', 'confidence': 0.91},
+                {'id': 2, 'emotion': 'Sad', 'confidence': 0.82},
+                {'id': 3, 'emotion': 'Angry', 'confidence': 0.73},
+                {'id': 4, 'emotion': 'Fear', 'confidence': 0.68}
+            ],
+            
+            # Test 6: 6 osób
+            [
+                {'id': 1, 'emotion': 'Happy', 'confidence': 0.94},
+                {'id': 2, 'emotion': 'Sad', 'confidence': 0.76},
+                {'id': 3, 'emotion': 'Angry', 'confidence': 0.81},
+                {'id': 4, 'emotion': 'Surprise', 'confidence': 0.89},
+                {'id': 5, 'emotion': 'Fear', 'confidence': 0.72},
+                {'id': 6, 'emotion': 'Neutral', 'confidence': 0.65}
+            ]
+        ]
+        
+        # Wyślij każdy test co 3 sekundy
+        for i, people in enumerate(test_cases):
+            print(f"\n[TEST] Case {i+1}: Sending {len(people)} people")
+            for person in people:
+                print(f"  - Person {person['id']}: {person['emotion']} ({person['confidence']*100:.1f}%)")
+            
+            # Wyślij dane osób do UI
+            window.signals.people_updated.emit(people)
+            time.sleep(3)
+        
+        # Na koniec pokaż komunikat
+        print("\n[TEST] All test cases completed!")
+        window.signals.people_updated.emit([])
+    
+    # Uruchom test w osobnym wątku
+    test_thread = threading.Thread(target=send_test_data, daemon=True)
+    test_thread.start()
+    
     sys.exit(app.exec_())
