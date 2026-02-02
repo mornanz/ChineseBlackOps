@@ -1,6 +1,5 @@
 """
-Adaptive ISO Control with Facial Emotion Detection and Histogram Analysis - UPDATED
-Dla Python 3.12 z FrameBridge
+Adaptive ISO Control with Facial Emotion Detection and Histogram Analysis
 """
 
 import numpy as np
@@ -522,7 +521,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    """Program entry point with error handling"""
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

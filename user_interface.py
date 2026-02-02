@@ -17,15 +17,12 @@ import sys
 # ============================================================================
 
 class UISignals(QObject):
-    """Signals do aktualizacji UI"""
     people_updated = pyqtSignal(list)
 
 
 class CameraUI(QWidget):
-    """Responsive camera application interface - USUWA WŁASNĄ KAMERĘ"""
     
     def __init__(self, frame_bridge):
-        """Initialize UI WITHOUT its own camera"""
         super().__init__()
         
         self.bridge = frame_bridge
@@ -140,11 +137,9 @@ class CameraUI(QWidget):
     # ========================================================================
     
     def update_display_frame(self, frame):
-        """Callback dla nowej ramki z bridge"""
         self.current_frame = frame
     
     def update_frame_from_bridge(self):
-        """Odczytaj ramkę z bridge i wyświetl"""
         if self.current_frame is None:
             self.show_no_signal()
             return
@@ -152,7 +147,6 @@ class CameraUI(QWidget):
         self.display_frame(self.current_frame)
     
     def show_no_signal(self):
-        """Pokaż komunikat o braku sygnału"""
         w = self.cam_label.width()
         h = self.cam_label.height()
         
@@ -172,7 +166,6 @@ class CameraUI(QWidget):
         self.cam_label.setPixmap(pixmap)
     
     def display_frame(self, frame):
-        """Wyświetl ramkę w UI z prostokątami osób"""
         w = self.cam_label.width()
         h = self.cam_label.height()
 
@@ -205,7 +198,6 @@ class CameraUI(QWidget):
     
     @pyqtSlot(list)
     def update_people(self, people):
-        """Aktualizuj listę osób z danymi z AutoAdjust"""
         for box in self.person_rows:
             self.info_layout.removeWidget(box)
             box.deleteLater()

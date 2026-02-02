@@ -4,6 +4,43 @@ Z-CAM Emotion Detection System - FIXED PEOPLE DETECTION for Python 3.12
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  
 import sys
+import ctypes
+
+if sys.platform == "win32":
+    python_dir = os.path.dirname(sys.executable)
+    os.environ['PATH'] = python_dir + os.pathsep + os.environ.get('PATH', '')
+    
+    lib_bin = os.path.join(python_dir, "Library", "bin")
+    if os.path.exists(lib_bin):
+        os.environ['PATH'] = lib_bin + os.pathsep + os.environ.get('PATH', '')
+    
+    scripts_dir = os.path.join(python_dir, "Scripts")
+    if os.path.exists(scripts_dir):
+        os.environ['PATH'] = scripts_dir + os.pathsep + os.environ.get('PATH', '')
+    
+    print(f"[DEBUG] Python dir: {python_dir}")
+    print(f"[DEBUG] PATH updated for DLLs")
+
+print("="*60)
+print("Z-CAM Emotion Detection System - FIXED PEOPLE DETECTION")
+print("="*60)
+
+try:
+    import torch
+    print(f"[MAIN] PyTorch version: {torch.__version__}")
+    print(f"[MAIN] CUDA available: {torch.cuda.is_available()}")
+except Exception as e:
+    print(f"[MAIN WARNING] PyTorch error: {e}")
+    print("[MAIN] Trying to continue without GPU support...")
+
+try:
+    import numpy as np
+    print(f"[MAIN] NumPy version: {np.__version__}")
+except ImportError as e:
+    print("[MAIN ERROR] NumPy is not installed!")
+    print("[MAIN ERROR] Please install NumPy with: pip install numpy")
+    sys.exit(1)
+
 import asyncio
 import threading
 from PyQt5.QtWidgets import QApplication
@@ -106,7 +143,6 @@ def run_combined_app():
     sys.exit(app.exec_())
 
 async def start_async_auto_adjust(bridge, ui):
-    """Asynchroniczna część AutoAdjust z dostępem do UI"""
     print("[ASYNC] Starting async AutoAdjust...")
     
     histogram_queue = asyncio.Queue(maxsize=3)
@@ -127,7 +163,6 @@ async def start_async_auto_adjust(bridge, ui):
     print("[ASYNC] Analyzer created")
     
     def update_people_callback(people):
-        """Callback dla osób - wysyła dane do UI przez signal"""
         if len(people) > 0:
             print(f"[BRIDGE CALLBACK] Sending {len(people)} people to UI signal")
             if ui and hasattr(ui, 'signals'):
